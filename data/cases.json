@@ -1,0 +1,18 @@
+[
+  {
+    "case_id": "case_phish_001",
+    "topic": "phishing",
+    "artifacts": [
+      {"artifact_id": "email_1001", "text": "From: support@bank.example.com\\nSubject: Urgent: Verify your account\\nPlease click http://malicious.example.com to verify."}
+    ],
+    "ground_truth": {"phishing": true}
+  },
+  {
+    "case_id": "case_lateral_001",
+    "topic": "lateral_movement",
+    "artifacts": [
+      {"artifact_id": "netflow_2001", "text": "SMB connection from host A to host B at 03:12AM with new account 'svc-admin'."}
+    ],
+    "ground_truth": {"lateral": true}
+  }
+]

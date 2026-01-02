@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+sqlalchemy
+requests
+scikit-learn
+numpy
+pydantic
+pytest
+httpx

@@ -1,0 +1,16 @@
+[
+  {
+    "id": "kb_phish_001",
+    "title": "Recognizing Phishing Emails",
+    "text": "Phishing emails often use urgent language, unexpected attachments, or mismatched sender domains. Check headers and verify links before clicking.",
+    "citation": "Coursebook Chapter 2",
+    "tags": ["phishing", "email", "social engineering"]
+  },
+  {
+    "id": "kb_lateral_001",
+    "title": "Lateral Movement Overview",
+    "text": "Lateral movement involves pivoting within a compromised network using credentials or exploitation of internal services. Typical indicators include unusual SMB activity and privileged credential use.",
+    "citation": "Coursebook Chapter 5",
+    "tags": ["lateral_movement", "credentials", "SMB"]
+  }
+]

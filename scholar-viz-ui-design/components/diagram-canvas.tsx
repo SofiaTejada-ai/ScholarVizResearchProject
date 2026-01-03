@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import { Card } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { X } from "lucide-react"
+import { type ScholarVizResponse } from "@/components/chat-panel"
 
 const MOCK_NODES = [
   { id: "mock_1", x: 150, y: 100, label: "Attacker", type: "threat" },
@@ -31,14 +32,23 @@ function coerceNodeType(n: any): "threat" | "system" | "user" | "data" {
   return "user"
 }
 
-export function DiagramCanvas({ diagram }: { diagram?: DiagramProp }) {
+export function DiagramCanvas({ response }: { response?: ScholarVizResponse | null }) {
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
+
+  // Prefer new contract: diagram.type === 'mermaid' with code
+  // Fallback to old contract if needed
+  const diagram = response?.diagram
+  const isMermaid = diagram?.type === "mermaid" && typeof diagram.code === "string"
+
+  // Fallback to old cytoscape-style rendering if present
+  const legacyDiagram = response?.diagram as any
+  const hasLegacy = legacyDiagram && Array.isArray(legacyDiagram.nodes) && Array.isArray(legacyDiagram.edges)
 
   // Build layout for backend nodes (since backend doesn’t provide x/y)
   const laidOut = useMemo(() => {
-    if (!diagram?.nodes?.length) return null
+    if (!hasLegacy || !legacyDiagram.nodes?.length) return null
 
-    const nodes = diagram.nodes.map((n: any, idx: number) => {
+    const nodes = legacyDiagram.nodes.map((n: any, idx: number) => {
       const col = idx % 3
       const row = Math.floor(idx / 3)
       return {
@@ -51,26 +61,26 @@ export function DiagramCanvas({ diagram }: { diagram?: DiagramProp }) {
       }
     })
 
-    const pos = new Map(nodes.map((n) => [n.id, n]))
+    const pos = new Map(nodes.map((n: any) => [n.id, n]))
 
-    const edges = (diagram.edges || [])
+    const edges = (legacyDiagram.edges || [])
       .map((e: any) => {
         const s = pos.get(String(e.source))
         const t = pos.get(String(e.target))
         if (!s || !t) return null
         return {
           id: `${String(e.source)}__${String(e.target)}`,
-          x1: s.x + 35,
-          y1: s.y,
-          x2: t.x - 35,
-          y2: t.y,
+          x1: (s as any).x + 35,
+          y1: (s as any).y,
+          x2: (t as any).x - 35,
+          y2: (t as any).y,
           label: e.label || e.relation || "",
         }
       })
       .filter(Boolean) as any[]
 
     return { nodes, edges }
-  }, [diagram])
+  }, [hasLegacy, legacyDiagram])
 
   const nodesToRender = laidOut?.nodes?.length ? laidOut.nodes : MOCK_NODES
   const edgesToRender = laidOut?.edges?.length
@@ -82,6 +92,49 @@ export function DiagramCanvas({ diagram }: { diagram?: DiagramProp }) {
       ]
 
   const node = nodesToRender.find((n: any) => String(n.id) === String(selectedNode))
+
+  // If we have mermaid code, render a simple styled diagram
+  if (isMermaid) {
+    const lines = diagram.code.split('\n').filter(Boolean)
+    return (
+      <div className="flex-1 relative bg-background p-6">
+        <div className="max-w-4xl mx-auto">
+          <h2 className="text-lg font-semibold mb-4">{diagram.title || "Diagram"}</h2>
+          <div className="bg-muted border border-border rounded-lg p-4">
+            {lines.map((line, i) => {
+              const trimmed = line.trim()
+              if (!trimmed) return null
+              if (trimmed.startsWith('graph TD') || trimmed.startsWith('graph LR')) return null
+              const isNode = trimmed.includes('[') && trimmed.includes(']')
+              const isEdge = trimmed.includes('-->')
+              if (isNode) {
+                const match = trimmed.match(/(\w+)\[(.+?)\]/)
+                if (!match) return <div key={i} className="text-xs text-muted-foreground">{trimmed}</div>
+                const [, id, label] = match
+                return (
+                  <div key={i} className="flex items-center gap-2 py-1">
+                    <div className="w-3 h-3 rounded-full bg-primary" />
+                    <span className="text-sm font-medium">{label.replace(/"/g, '')}</span>
+                  </div>
+                )
+              }
+              if (isEdge) {
+                const match = trimmed.match(/(\w+)\s+-->.*?(\w+)/)
+                if (!match) return <div key={i} className="text-xs text-muted-foreground">{trimmed}</div>
+                const [, src, tgt] = match
+                return (
+                  <div key={i} className="ml-4 border-l-2 border-border pl-4 py-1 text-xs text-muted-foreground">
+                    → connects to next node
+                  </div>
+                )
+              }
+              return <div key={i} className="text-xs text-muted-foreground">{trimmed}</div>
+            })}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex-1 relative bg-background">

@@ -11,6 +11,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.api import router as api_router
+
 logger = logging.getLogger("uvicorn")
 logger.setLevel(logging.INFO)
 
@@ -32,6 +34,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(api_router)
 
 # Optionally mount a built frontend if present. We look for the following locations
 # (relative to the repository root):

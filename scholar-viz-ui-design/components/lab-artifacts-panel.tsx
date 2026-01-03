@@ -3,6 +3,7 @@
 import { useMemo, useState, useEffect } from "react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
+import { type ScholarVizResponse } from "@/components/chat-panel"
 
 const MOCK_ARTIFACTS: Record<string, string> = {
   "email_headers.txt": `Received: from mail.attacker.com (203.0.113.42)
@@ -40,17 +41,13 @@ type TutorProp =
     }
   | undefined
 
-export function LabArtifactsPanel({ lab, tutor }: { lab?: LabProp; tutor?: TutorProp }) {
-  const backendArtifacts: Record<string, string> | null = useMemo(() => {
-    const arts = lab?.artifacts || []
-    if (!arts.length) return null
+export function LabArtifactsPanel({ response }: { response?: ScholarVizResponse | null }) {
+  const lab = response?.lab
+  const steps = response?.steps || []
 
-    const mapped: Record<string, string> = {}
-    for (const a of arts) {
-      const key = String(a.artifact_id || a.id || "artifact")
-      mapped[key] = String(a.text || "")
-    }
-    return mapped
+  const backendArtifacts: Record<string, string> | null = useMemo(() => {
+    if (!lab?.enabled || !lab.artifact_text) return null
+    return { [lab.case_file]: lab.artifact_text }
   }, [lab])
 
   const artifactMap: Record<string, string> = backendArtifacts ?? MOCK_ARTIFACTS
@@ -68,7 +65,30 @@ export function LabArtifactsPanel({ lab, tutor }: { lab?: LabProp; tutor?: Tutor
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [artifactKeys.join("|")])
 
-  const stepsToShow = tutor?.steps?.length ? tutor.steps.map((s) => s.step) : NEXT_STEPS
+  const stepsToShow = steps.length ? steps : NEXT_STEPS
+
+  // Render highlights if available
+  const renderHighlightedArtifact = () => {
+    const text = artifactMap[selectedArtifact] || ""
+    const highlights = lab?.highlights || []
+    if (!highlights.length) return <pre className="text-xs font-mono leading-relaxed whitespace-pre-wrap">{text}</pre>
+
+    const lines = text.split('\n')
+    return (
+      <div className="text-xs font-mono leading-relaxed whitespace-pre-wrap">
+        {lines.map((line, i) => {
+          const lineNum = i + 1
+          const highlight = highlights.find((h: any) => h.start_line <= lineNum && h.end_line >= lineNum)
+          return (
+            <div key={i} className={highlight ? "bg-yellow-200/40 px-1 rounded" : ""}>
+              {line}
+              {highlight && <span className="ml-2 text-xs text-muted-foreground">[{highlight.label}]</span>}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
 
   return (
     <div className="p-4 grid grid-cols-2 gap-4 h-full">
@@ -90,9 +110,7 @@ export function LabArtifactsPanel({ lab, tutor }: { lab?: LabProp; tutor?: Tutor
         </div>
 
         <div className="border border-border rounded-lg p-3 bg-muted/30 h-[180px] overflow-auto">
-          <pre className="text-xs font-mono leading-relaxed whitespace-pre-wrap">
-            {artifactMap[selectedArtifact] || ""}
-          </pre>
+          {renderHighlightedArtifact()}
         </div>
       </div>
 

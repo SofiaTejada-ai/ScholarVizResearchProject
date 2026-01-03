@@ -7,21 +7,22 @@ type TutorStep = { step: string; evidence: string[] }
 type Tutor = { final_answer_text: string; steps: TutorStep[] }
 
 type ScholarVizResponse = {
-  rewritten_question?: string
-  topic_detected?: string
-  retrieved_docs?: Array<{ id: string; title: string; quote: string }>
-  selected_concepts?: string[]
-  diagram?: { nodes: unknown[]; edges: unknown[] }
-  lab?: { case_id: string; artifacts: unknown[]; highlights: unknown[] }
-  tutor?: Tutor
-  practice?: {
-    question: string
-    choices: string[]
-    correct_index: number
-    evidence_ids: string[]
-    explanation: string
+  topic?: string
+  title?: string
+  summary?: string
+  diagram?: { type: string; code: string; title: string }
+  steps?: string[]
+  sources?: Array<{ id: string; title: string; section?: string; snippet: string; ref: string; confidence: number }>
+  lab?: {
+    enabled: boolean
+    case_file: string
+    artifact_text: string
+    highlights: Array<{ start_line: number; end_line: number; label: string; reason: string }>
+    next_steps: string[]
   }
-  telemetry?: unknown
+  practice?: { question: string; hint: string; answer: string }
+  strict_evidence_used?: boolean
+  kb_coverage?: "high" | "medium" | "low" | "none"
 }
 
 function sseEncode(event: string, data: unknown) {

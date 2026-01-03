@@ -13,21 +13,22 @@ type TutorStep = { step: string; evidence: string[] }
 type Tutor = { final_answer_text: string; steps: TutorStep[] }
 
 export type ScholarVizResponse = {
-  rewritten_question?: string
-  topic_detected?: string
-  retrieved_docs?: Array<{ id: string; title: string; quote: string }>
-  selected_concepts?: string[]
-  diagram?: { nodes: unknown[]; edges: unknown[] }
-  lab?: { case_id: string; artifacts: unknown[]; highlights: unknown[] }
-  tutor?: Tutor
-  practice?: {
-    question: string
-    choices: string[]
-    correct_index: number
-    evidence_ids: string[]
-    explanation: string
+  topic?: string
+  title?: string
+  summary?: string
+  diagram?: { type: string; code: string; title: string }
+  steps?: string[]
+  sources?: Array<{ id: string; title: string; section?: string; snippet: string; ref: string; confidence: number }>
+  lab?: {
+    enabled: boolean
+    case_file: string
+    artifact_text: string
+    highlights: Array<{ start_line: number; end_line: number; label: string; reason: string }>
+    next_steps: string[]
   }
-  telemetry?: unknown
+  practice?: { question: string; hint: string; answer: string }
+  strict_evidence_used?: boolean
+  kb_coverage?: "high" | "medium" | "low" | "none"
 }
 
 type Props = {
@@ -175,25 +176,20 @@ export function ChatPanel({ strictEvidence, topic, chatHistory, setChatHistory, 
 
             setLastResponse(payload)
 
-            const tutorText = payload.tutor?.final_answer_text?.trim() || ""
-            const steps = payload.tutor?.steps || []
-
-            // Build a nice final chat message
-            const lines: string[] = []
-            if (tutorText) lines.push(tutorText)
-
-            if (steps.length) {
-              lines.push("")
-              steps.forEach((s, i) => lines.push(`${i + 1}. ${s.step}`))
+            // Build a short preview (4–8 lines max) for the chat bubble
+            const previewLines: string[] = []
+            if (payload.summary) {
+              // Take first 2 sentences or truncate to 2 lines
+              const sentences = payload.summary.split('. ').filter(Boolean)
+              previewLines.push(sentences.slice(0, 2).join('. ') + (sentences.length > 2 ? '.' : ''))
             }
-
-            // (Optional) show practice question preview
-            if (payload.practice?.question) {
-              lines.push("")
-              lines.push(`Practice: ${payload.practice.question}`)
+            if (!previewLines.length && payload.title) {
+              previewLines.push(payload.title)
             }
-
-            writeAssistant(lines.join("\n"))
+            if (!previewLines.length) {
+              previewLines.push("View explanation and diagram.")
+            }
+            writeAssistant(previewLines.join("\n"))
           }
 
           if (event === "error") {

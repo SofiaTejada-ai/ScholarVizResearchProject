@@ -2,75 +2,159 @@
   "nodes": [
     {
       "id": "concept_phish_indicator",
-      "label": "Phishing Indicator",
-      "description": "Signs that an email is phishing, such as urgency, suspicious links, and mismatched sender details.",
+      "label": "Phishing Indicators",
+      "description": "Signals of phishing such as urgency, mismatched sender domains, suspicious links, and unexpected attachments.",
       "topic": "phishing",
-      "tags": [
-        "phishing",
-        "email",
-        "link",
-        "attachment",
-        "urgent",
-        "verify",
-        "account",
-        "http",
-        "bank",
-        "support"
-      ]
+      "tags": ["phishing", "email", "urgent", "verify", "link", "attachment", "invoice", "support", "bank"]
+    },
+    {
+      "id": "concept_sender_spoofing",
+      "label": "Sender Spoofing",
+      "description": "Spoofed From/Reply-To/Return-Path fields used to impersonate trusted senders.",
+      "topic": "phishing",
+      "tags": ["from", "reply-to", "return-path", "spoof", "domain", "received"]
+    },
+    {
+      "id": "concept_url_obfuscation",
+      "label": "URL Obfuscation",
+      "description": "Techniques like typosquatting or punycode to disguise malicious destinations.",
+      "topic": "phishing",
+      "tags": ["url", "link", "http", "https", "typosquat", "punycode"]
+    },
+    {
+      "id": "concept_macro_attachment",
+      "label": "Malicious Attachment / Macro",
+      "description": "Attachments (e.g., .docm) that request enabling macros or execute malware.",
+      "topic": "phishing",
+      "tags": ["attachment", "macro", "docm", "enable content", "invoice", "resume"]
     },
     {
       "id": "concept_credentials_exfil",
       "label": "Credential Theft",
-      "description": "Attempts to capture, steal, or misuse credentials that enable unauthorized access.",
+      "description": "Credential capture, theft, or misuse that enables unauthorized access.",
       "topic": "lateral_movement",
-      "tags": [
-        "credentials",
-        "credential",
-        "password",
-        "login",
-        "username",
-        "svc-admin",
-        "admin",
-        "privileged",
-        "account"
-      ]
+      "tags": ["credentials", "credential", "password", "login", "username", "svc-admin", "admin", "privileged", "account"]
+    },
+    {
+      "id": "concept_ntlm",
+      "label": "NTLM / Pass-the-Hash",
+      "description": "Reuse of NTLM credentials/hashes for authentication across hosts.",
+      "topic": "lateral_movement",
+      "tags": ["ntlm", "hash", "pass-the-hash", "authentication", "logon", "event"]
     },
     {
       "id": "concept_smb_activity",
       "label": "Unusual SMB Activity",
-      "description": "Network file-sharing usage patterns that are anomalous or indicate lateral movement.",
+      "description": "Anomalous SMB access patterns that can indicate lateral movement.",
       "topic": "lateral_movement",
-      "tags": [
-        "SMB",
-        "smb",
-        "network",
-        "anomaly",
-        "connection",
-        "host",
-        "svc-admin",
-        "03:12AM"
-      ]
+      "tags": ["smb", "admin$", "c$", "share", "connection", "03:12AM", "host"]
+    },
+    {
+      "id": "concept_remote_exec",
+      "label": "Remote Execution",
+      "description": "Remote execution via tools/protocols like PsExec, WMI, or scheduled tasks.",
+      "topic": "lateral_movement",
+      "tags": ["psexec", "wmi", "service", "scheduled task", "remote"]
+    },
+    {
+      "id": "concept_privesc",
+      "label": "Privilege Escalation",
+      "description": "Gaining higher privileges (user to admin) via misconfiguration or credential access.",
+      "topic": "privilege_escalation",
+      "tags": ["privilege", "privesc", "admin", "group", "token"]
+    },
+    {
+      "id": "concept_credential_dumping",
+      "label": "Credential Dumping",
+      "description": "Attempting to extract credentials from memory or stores (e.g., LSASS).",
+      "topic": "privilege_escalation",
+      "tags": ["lsass", "dump", "mimikatz", "secrets", "credentials"]
+    },
+    {
+      "id": "concept_data_staging",
+      "label": "Data Staging",
+      "description": "Collecting and preparing data for exfiltration (e.g., archives).",
+      "topic": "data_exfiltration",
+      "tags": ["staging", "archive", "zip", "rar", "compress"]
+    },
+    {
+      "id": "concept_exfil_channel",
+      "label": "Exfiltration Channel",
+      "description": "Transferring data out via HTTPS, DNS, SMB, or cloud services.",
+      "topic": "data_exfiltration",
+      "tags": ["exfil", "https", "dns", "outbound", "transfer", "cloud"]
     }
   ],
   "edges": [
     {
       "source": "concept_phish_indicator",
+      "target": "concept_sender_spoofing",
+      "relation": "often includes",
+      "description": "Phishing often includes spoofed sender fields.",
+      "evidence_doc_ids": ["kb_phish_001", "kb_phish_002"]
+    },
+    {
+      "source": "concept_phish_indicator",
+      "target": "concept_url_obfuscation",
+      "relation": "often includes",
+      "description": "Phishing often includes suspicious or obfuscated links.",
+      "evidence_doc_ids": ["kb_phish_001", "kb_phish_003"]
+    },
+    {
+      "source": "concept_phish_indicator",
+      "target": "concept_macro_attachment",
+      "relation": "may include",
+      "description": "Some phishing uses malicious attachments/macros.",
+      "evidence_doc_ids": ["kb_phish_004"]
+    },
+    {
+      "source": "concept_sender_spoofing",
       "target": "concept_credentials_exfil",
       "relation": "can lead to",
-      "description": "Phishing can obtain credentials that enable lateral movement.",
-      "evidence_doc_ids": [
-        "kb_phish_001",
-        "kb_lateral_001"
-      ]
+      "description": "Spoofed email can trick a user into credential entry.",
+      "evidence_doc_ids": ["kb_phish_002", "kb_phish_001"]
+    },
+    {
+      "source": "concept_url_obfuscation",
+      "target": "concept_credentials_exfil",
+      "relation": "can lead to",
+      "description": "Obfuscated URLs can collect credentials.",
+      "evidence_doc_ids": ["kb_phish_003"]
+    },
+    {
+      "source": "concept_credentials_exfil",
+      "target": "concept_ntlm",
+      "relation": "may enable",
+      "description": "Stolen credentials/hashes may be reused for NTLM authentication.",
+      "evidence_doc_ids": ["kb_lateral_002"]
     },
     {
       "source": "concept_credentials_exfil",
       "target": "concept_smb_activity",
       "relation": "enables",
-      "description": "Stolen credentials used to access SMB may create unusual activity.",
-      "evidence_doc_ids": [
-        "kb_lateral_001"
-      ]
+      "description": "Stolen credentials used for SMB can create unusual activity.",
+      "evidence_doc_ids": ["kb_lateral_001"]
+    },
+    {
+      "source": "concept_smb_activity",
+      "target": "concept_remote_exec",
+      "relation": "may precede",
+      "description": "SMB access can precede remote execution via admin shares or tools.",
+      "evidence_doc_ids": ["kb_lateral_003"]
+    },
+    {
+      "source": "concept_privesc",
+      "target": "concept_credential_dumping",
+      "relation": "may involve",
+      "description": "Privilege escalation attempts may involve credential dumping.",
+      "evidence_doc_ids": ["kb_privesc_001"]
+    },
+    {
+      "source": "concept_data_staging",
+      "target": "concept_exfil_channel",
+      "relation": "prepares for",
+      "description": "Staged data is transferred via an exfiltration channel.",
+      "evidence_doc_ids": ["kb_exfil_001"]
     }
   ]
 }

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { type ScholarVizResponse } from "@/components/chat-panel"
 
 const PRACTICE_QUESTION = {
   question: "Which email header field is most commonly spoofed in phishing attacks?",
@@ -23,22 +24,55 @@ type PracticeProp =
     }
   | undefined
 
-export function PracticePanel({ practice }: { practice?: PracticeProp }) {
+export function PracticePanel({ response }: { response?: ScholarVizResponse | null }) {
+  const practice = response?.practice
+
   const effective = useMemo(() => {
-    if (practice?.question && practice?.choices?.length) {
+    if (practice?.question) {
       return {
         question: practice.question,
-        options: practice.choices,
-        correctAnswer: practice.correct_index ?? 0,
-        explanation: practice.explanation || "",
-        evidence: practice.evidence_ids || [],
+        options: [], // New contract doesn’t provide choices; render as open text
+        correctAnswer: 0,
+        explanation: practice.answer || "",
+        evidence: [], // Not provided in new contract
       }
     }
     return PRACTICE_QUESTION
   }, [practice])
 
-  const [selectedOption, setSelectedOption] = useState<number | null>(null)
   const [showAnswer, setShowAnswer] = useState(false)
+
+  // If we have a new-style practice (no choices), render open answer UI
+  if (practice?.question && !effective.options.length) {
+    return (
+      <div className="p-6 max-w-3xl mx-auto space-y-6">
+        <div>
+          <h3 className="font-semibold text-lg mb-4">{practice.question}</h3>
+          {practice.hint && (
+            <div className="text-sm text-muted-foreground mb-4 p-3 bg-muted/30 rounded">
+              <strong>Hint:</strong> {practice.hint}
+            </div>
+          )}
+        </div>
+
+        <Button onClick={() => setShowAnswer(!showAnswer)} className="w-full">
+          {showAnswer ? "Hide Answer" : "Reveal Answer"}
+        </Button>
+
+        {showAnswer && practice.answer && (
+          <Card className="p-4 space-y-3 bg-muted/30">
+            <div>
+              <p className="text-sm font-medium mb-1">Answer</p>
+              <p className="text-sm text-muted-foreground leading-relaxed">{practice.answer}</p>
+            </div>
+          </Card>
+        )}
+      </div>
+    )
+  }
+
+  // Fallback to old multiple-choice UI if we have choices
+  const [selectedOption, setSelectedOption] = useState<number | null>(null)
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">

@@ -1,16 +1,79 @@
 [
-  {
-    "id": "kb_phish_001",
-    "title": "Recognizing Phishing Emails",
-    "text": "Phishing emails often use urgent language, unexpected attachments, or mismatched sender domains. Check headers and verify links before clicking.",
-    "citation": "Coursebook Chapter 2",
-    "tags": ["phishing", "email", "social engineering"]
-  },
-  {
-    "id": "kb_lateral_001",
-    "title": "Lateral Movement Overview",
-    "text": "Lateral movement involves pivoting within a compromised network using credentials or exploitation of internal services. Typical indicators include unusual SMB activity and privileged credential use.",
-    "citation": "Coursebook Chapter 5",
-    "tags": ["lateral_movement", "credentials", "SMB"]
-  }
-]
+   {
+     "id": "kb_scope_001",
+     "title": "Evidence-Grounded Tutoring Scope",
+     "text": "This tutor answers questions using course snippets (KB doc ids) and lab artifacts. When evidence is missing, request specific headers/log lines rather than guessing.",
+     "citation": "Course Policy: Grounded Answers",
+     "tags": ["scope", "evidence", "grounding", "citations"]
+   },
+   {
+     "id": "kb_phish_001",
+     "title": "Recognizing Phishing Emails",
+     "text": "Phishing emails often use urgent language, unexpected attachments, or mismatched sender domains. Check headers and verify links before clicking.",
+     "citation": "Coursebook Chapter 2",
+     "tags": ["phishing", "email", "social engineering", "urgent", "verify"]
+   },
+   {
+     "id": "kb_phish_002",
+     "title": "Sender Spoofing and Domain Mismatch",
+     "text": "The visible From name/address can be spoofed. Compare the sender domain to the organization’s real domain, inspect Reply-To/Return-Path, and review Received hops for the originating IP/domain.",
+     "citation": "Coursebook Chapter 2",
+     "tags": ["phishing", "from", "reply-to", "return-path", "received", "domain"]
+   },
+   {
+     "id": "kb_phish_003",
+     "title": "Suspicious Links and URL Inspection",
+     "text": "Before clicking, hover to inspect the destination, look for punycode or typosquatting, and verify via a trusted channel (official website or phone).",
+     "citation": "Coursebook Chapter 2",
+     "tags": ["phishing", "link", "url", "http", "https", "typosquat", "punycode"]
+   },
+   {
+     "id": "kb_phish_004",
+     "title": "Attachments and Macros",
+     "text": "Malicious documents may use macros (e.g., .docm) to execute code. Treat unexpected invoices/resumes as suspicious and use sandboxing/AV scanning before opening.",
+     "citation": "Coursebook Chapter 3",
+     "tags": ["phishing", "attachment", "macro", "docm", "invoice"]
+   },
+   {
+     "id": "kb_lateral_001",
+     "title": "Lateral Movement Overview",
+     "text": "Lateral movement involves pivoting within a compromised network using credentials or exploitation of internal services. Typical indicators include unusual SMB activity and privileged credential use.",
+     "citation": "Coursebook Chapter 5",
+     "tags": ["lateral_movement", "credentials", "SMB", "pivot"]
+   },
+   {
+     "id": "kb_lateral_002",
+     "title": "Credential Reuse and NTLM/Pass-the-Hash",
+     "text": "Attackers may reuse stolen credentials or NTLM hashes to authenticate to other hosts. Watch for new logons with service accounts, off-hours activity, and repeated authentication failures/successes across hosts.",
+     "citation": "Coursebook Chapter 5",
+     "tags": ["lateral_movement", "ntlm", "pass-the-hash", "svc-admin", "logon"]
+   },
+   {
+     "id": "kb_lateral_003",
+     "title": "Remote Execution via SMB/WMI/PsExec",
+     "text": "Remote services (SMB admin shares, WMI, PsExec, scheduled tasks) are commonly used for lateral movement. Indicators include remote service creation, admin share access, and process creation tied to remote management tools.",
+     "citation": "Coursebook Chapter 6",
+     "tags": ["lateral_movement", "smb", "wmi", "psexec", "service", "scheduled task"]
+   },
+   {
+     "id": "kb_privesc_001",
+     "title": "Privilege Escalation Basics",
+     "text": "Privilege escalation increases access (e.g., from user to admin). Common signals include new admin group membership, suspicious credential dumping attempts, or unexpected use of privileged tokens.",
+     "citation": "Coursebook Chapter 4",
+     "tags": ["privilege_escalation", "admin", "token", "lsass", "dump"]
+   },
+   {
+     "id": "kb_exfil_001",
+     "title": "Data Exfiltration and Staging",
+     "text": "Exfiltration may involve compressing/staging data, then transferring via HTTPS/DNS/SMB or cloud services. Indicators include unusual outbound connections, large transfers, or new archives created on sensitive hosts.",
+     "citation": "Coursebook Chapter 7",
+     "tags": ["data_exfiltration", "staging", "archive", "https", "dns"]
+   },
+   {
+     "id": "kb_ir_001",
+     "title": "Incident Response: First Actions",
+     "text": "Start by preserving evidence, scoping affected accounts/hosts, and containing risk (e.g., isolate host, reset credentials). Document what you observed and which artifacts support each claim.",
+     "citation": "Coursebook Appendix: IR Checklist",
+     "tags": ["incident", "response", "preserve", "containment", "evidence"]
+   }
+ ]

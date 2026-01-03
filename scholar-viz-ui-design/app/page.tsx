@@ -6,6 +6,7 @@ import { ChatPanel, type ScholarVizResponse } from "@/components/chat-panel"
 import { DiagramCanvas } from "@/components/diagram-canvas"
 import { LabArtifactsPanel } from "@/components/lab-artifacts-panel"
 import { PracticePanel } from "@/components/practice-panel"
+import { ScrollArea } from "@/components/ui/scroll-area"
 
 type ChatTurn = { role: "user" | "assistant"; content: string }
 
@@ -61,13 +62,53 @@ export default function Page() {
         />
 
         <div className="flex-1 relative overflow-hidden">
-          <DiagramCanvas />
+          <DiagramCanvas response={lastResponse} />
 
-          {/* lightweight debug panel (optional but super useful while wiring) */}
-          {lastResponse?.tutor?.final_answer_text && (
-            <div className="absolute right-4 bottom-4 w-[420px] max-h-[240px] overflow-auto border border-border rounded-lg bg-background/90 p-3 text-xs">
-              <div className="font-semibold mb-1">Latest tutor answer (debug)</div>
-              <div className="whitespace-pre-wrap">{lastResponse.tutor.final_answer_text}</div>
+          {/* Show full explanation in a sidebar when we have a response */}
+          {lastResponse && (
+            <div className="absolute top-4 right-4 bottom-4 w-[420px] bg-background/95 border border-border rounded-lg shadow-lg overflow-hidden flex flex-col">
+              <div className="p-4 border-b border-border">
+                <h2 className="font-semibold mb-1">{lastResponse.title || "Explanation"}</h2>
+                <div className="text-sm text-muted-foreground">
+                  {lastResponse.summary ? (
+                    <>
+                      {lastResponse.summary.split('. ').slice(0, 2).join('. ')}
+                      {lastResponse.summary.split('. ').length > 2 && '.'}
+                    </>
+                  ) : (
+                    "View explanation and diagram."
+                  )}
+                </div>
+              </div>
+
+              <ScrollArea className="flex-1 p-4">
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="font-medium mb-2">Steps</h3>
+                    <div className="space-y-1 text-sm">
+                      {(lastResponse.steps || []).map((step, i) => (
+                        <div key={i} className="flex items-start gap-2">
+                          <span className="text-primary font-medium">{i + 1}.</span>
+                          <span>{step}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="font-medium mb-2">Sources</h3>
+                    <div className="space-y-2 text-sm">
+                      {(lastResponse.sources || []).map((src, i) => (
+                        <div key={i} className="border border-border rounded p-2">
+                          <div className="font-medium">{src.title}</div>
+                          {src.section && <div className="text-xs text-muted-foreground">{src.section}</div>}
+                          <div className="text-xs text-muted-foreground mt-1">{src.snippet}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </ScrollArea>
             </div>
           )}
         </div>
@@ -99,7 +140,7 @@ export default function Page() {
         </div>
 
         <div className="flex-1 overflow-auto">
-          {activeTab === "lab" ? <LabArtifactsPanel /> : <PracticePanel />}
+          {activeTab === "lab" ? <LabArtifactsPanel response={lastResponse} /> : <PracticePanel response={lastResponse} />}
         </div>
       </div>
     </div>

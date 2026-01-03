@@ -2,8 +2,10 @@ from sqlalchemy import create_engine, Column, String, Integer, DateTime, Boolean
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from datetime import datetime, timedelta
 import os
+from pathlib import Path
 
-DB_PATH = os.getenv("SCHOLARVIZ_DB_PATH", "data/scholarviz.db")
+_default_db_path = str((Path(__file__).resolve().parent.parent / "data" / "scholarviz.db"))
+DB_PATH = os.getenv("SCHOLARVIZ_DB_PATH", _default_db_path)
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 ENGINE = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=ENGINE)

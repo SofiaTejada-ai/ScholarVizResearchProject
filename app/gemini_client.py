@@ -1,83 +1,301 @@
-"""
-Simple Gemini client wrapper
-- Removes any hard length truncation
-- Increases default max_tokens
-- Uses the Google Generative Language REST endpoint if GEMINI_API_KEY is provided
-
-Note: This is a lightweight wrapper intended to be easy to read and modify. In production you
-may want to adopt an official client library, retries/backoff, and stronger error handling.
-"""
-
-from typing import Optional
+# app/clients/gemini_client.py
 import os
+import json
+from typing import List, Dict, Any, Optional, Tuple
 import requests
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "text-bison-001")
-DEFAULT_MAX_TOKENS = int(os.getenv("GEMINI_MAX_TOKENS", "8192"))
 
+class GeminiClient:
+    def __init__(self) -> None:
+        self.api_key = os.getenv("GEMINI_API_KEY", "").strip()
+        self.model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+        self.fallback_model = os.getenv("GEMINI_FALLBACK_MODEL", "").strip()
 
-class GeminiClientError(RuntimeError):
-    pass
+        tb = os.getenv("GEMINI_THINKING_BUDGET", "").strip()
+        self.thinking_budget: Optional[int] = int(tb) if tb.isdigit() else None
 
+        self._last_usage: Dict[str, Any] = {}
+        self._last_raw: Dict[str, Any] = {}
+        self._last_model_used: str = self.model
 
-def generate_text(prompt: str, *, max_tokens: Optional[int] = None, temperature: float = 0.0, model: Optional[str] = None) -> str:
-    """Generate text from Gemini/Generative API.
+        if self.api_key and not self.fallback_model:
+            self.fallback_model = self._discover_fallback_model()
 
-    This function intentionally does NOT truncate the prompt. If you want to enforce a hard
-    prompt length limit do that upstream where the call originates. The default max_tokens has
-    been increased to DEFAULT_MAX_TOKENS to allow longer outputs.
+    def _models_url(self) -> str:
+        return f"https://generativelanguage.googleapis.com/v1beta/models?key={self.api_key}"
 
-    Args:
-        prompt: full prompt to send to the model (no internal truncation performed)
-        max_tokens: maximum tokens to generate (defaults to DEFAULT_MAX_TOKENS)
-        temperature: sampling temperature
-        model: override model name; otherwise GEMINI_MODEL is used
+    def _url(self, model: str) -> str:
+        return f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.api_key}"
 
-    Returns:
-        Generated text string (may be empty on some model responses)
+    def _discover_fallback_model(self) -> str:
+        try:
+            resp = requests.get(self._models_url(), timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            models = data.get("models") or []
 
-    Raises:
-        GeminiClientError for missing credentials or HTTP errors
-    """
-    if GEMINI_API_KEY is None:
-        raise GeminiClientError("GEMINI_API_KEY environment variable is not set")
+            candidates: List[str] = []
+            for m in models:
+                name = (m.get("name") or "").replace("models/", "")
+                methods = m.get("supportedGenerationMethods") or []
+                if "generateContent" not in methods:
+                    continue
+                low = name.lower()
+                if "embed" in low:
+                    continue
+                if name == self.model:
+                    continue
+                candidates.append(name)
 
-    model = model or GEMINI_MODEL
-    max_tokens = int(max_tokens) if max_tokens is not None else DEFAULT_MAX_TOKENS
+            if not candidates:
+                return ""
 
-    # Use the Generative Language REST endpoint. Many deployments accept an API key in the
-    # query string; adjust as needed for your environment (e.g. service account, OAuth token).
-    url = f"https://generativelanguage.googleapis.com/v1beta2/models/{model}:generateText?key={GEMINI_API_KEY}"
+            flash = [c for c in candidates if "flash" in c.lower()]
+            if flash:
+                return flash[0]
 
-    payload = {
-        "prompt": {"text": prompt},
-        # maxOutputTokens controls output length in the Generative API
-        "maxOutputTokens": max_tokens,
-        "temperature": temperature,
-    }
+            pro = [c for c in candidates if "pro" in c.lower()]
+            if pro:
+                return pro[0]
 
-    try:
-        resp = requests.post(url, json=payload, timeout=60)
-    except Exception as exc:
-        raise GeminiClientError(f"Request to Gemini API failed: {exc}") from exc
+            return candidates[0]
+        except Exception:
+            return ""
 
-    if not resp.ok:
-        # Surface as much information as possible for debugging
-        msg = f"Gemini API returned {resp.status_code}: {resp.text}"
-        raise GeminiClientError(msg)
+    def _extract_text(self, data: Dict[str, Any]) -> Tuple[str, Optional[str]]:
+        candidates = data.get("candidates") or []
+        if not candidates:
+            return "", None
 
-    data = resp.json()
+        cand0 = candidates[0] or {}
+        finish_reason = cand0.get("finishReason")
 
-    # Different API versions return text in different fields. Prefer candidate output if present.
-    text = ""
-    if isinstance(data, dict):
-        # v1beta2 style: { "candidates": [{"output":"..."}], ... }
-        candidates = data.get("candidates")
-        if candidates and isinstance(candidates, list):
-            text = candidates[0].get("output", "") if isinstance(candidates[0], dict) else ""
-        # fallback: sometimes there's an "output" top-level key
-        if not text:
-            text = data.get("output", "") or data.get("content", "") or ""
+        content = cand0.get("content") or {}
+        parts = content.get("parts") or []
 
-    return text
+        texts: List[str] = []
+        if isinstance(parts, list):
+            for p in parts:
+                if isinstance(p, dict):
+                    t = p.get("text")
+                    if isinstance(t, str) and t.strip():
+                        texts.append(t)
+
+        return "".join(texts).strip(), finish_reason
+
+    def _post(self, model: str, prompt: str, max_output_tokens: int, thinking_budget: Optional[int]) -> Dict[str, Any]:
+        generation_config: Dict[str, Any] = {
+            "temperature": 0.2,
+            "maxOutputTokens": max_output_tokens,
+        }
+
+        generation_config["responseMimeType"] = "text/plain"
+        if thinking_budget is not None:
+            generation_config["thinkingConfig"] = {"thinkingBudget": thinking_budget}
+
+        payload: Dict[str, Any] = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": generation_config,
+        }
+
+        resp = requests.post(self._url(model), json=payload, timeout=45)
+
+        if resp.status_code == 400:
+            generation_config.pop("thinkingConfig", None)
+            generation_config.pop("responseMimeType", None)
+            payload["generationConfig"] = generation_config
+            resp = requests.post(self._url(model), json=payload, timeout=45)
+
+        if resp.status_code >= 400:
+            raise requests.HTTPError(f"{resp.status_code} {resp.text}")
+
+        return resp.json()
+
+    def _call_model_on(
+        self, model: str, prompt: str, max_output_tokens: int, thinking_budget: Optional[int]
+    ) -> Tuple[str, Optional[str], Dict[str, Any]]:
+        data = self._post(model, prompt, max_output_tokens, thinking_budget)
+        text, finish_reason = self._extract_text(data)
+        usage = data.get("usageMetadata", {}) or {}
+        return text, finish_reason, {"raw": data, "usage": usage, "model": model}
+
+    def _call_model(self, prompt: str, max_output_tokens: int = 900) -> str:
+        if not self.api_key:
+            return f"[stubbed response] {prompt[:200]}"
+
+        text, _, info = self._call_model_on(self.model, prompt, max_output_tokens, self.thinking_budget)
+        self._last_raw = info["raw"]
+        self._last_usage = info["usage"]
+        self._last_model_used = info["model"]
+        if text:
+            return text
+
+        # retry: thinkingBudget=0
+        try:
+            text2, _, info2 = self._call_model_on(self.model, prompt, max_output_tokens, 0)
+            self._last_raw = info2["raw"]
+            self._last_usage = info2["usage"]
+            self._last_model_used = info2["model"]
+            if text2:
+                return text2
+        except Exception:
+            pass
+
+        # fallback model
+        if self.fallback_model:
+            try:
+                text3, _, info3 = self._call_model_on(self.fallback_model, prompt, max_output_tokens, None)
+                self._last_raw = info3["raw"]
+                self._last_usage = info3["usage"]
+                self._last_model_used = info3["model"]
+                if text3:
+                    return text3
+            except Exception as e:
+                return f"[gemini_fallback_error] {str(e)}"
+
+        pf = self._last_raw.get("promptFeedback")
+        return f"[gemini_empty_text] promptFeedback={pf}"
+
+    def _extract_json_obj(self, s: str) -> Optional[Dict[str, Any]]:
+        if not s:
+            return None
+        start = s.find("{")
+        end = s.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        cand = s[start : end + 1]
+        try:
+            obj = json.loads(cand)
+            return obj if isinstance(obj, dict) else None
+        except Exception:
+            return None
+
+    def rewrite_intent(self, message: str, chat_history: List[Dict[str, str]], strict_mode: bool) -> str:
+        history_text = ""
+        if chat_history:
+            recent = chat_history[-6:]
+            history_text = "\n".join([f"{c.get('role','')}: {c.get('content','')}" for c in recent])
+
+        strict_line = "Strict mode is true. Do not add any new facts." if strict_mode else "Strict mode is false."
+
+        prompt = f"""You are a concise rewriter.
+Rewrite the user message into one short self-contained question.
+
+{strict_line}
+
+User message:
+{message}
+
+Recent chat history:
+{history_text}
+
+Return only the rewritten question on one line.
+"""
+        out = self._call_model(prompt, max_output_tokens=96).strip()
+        if not out or out.startswith("[gemini_"):
+            return message.strip()
+        return out.splitlines()[0].strip()
+
+    def generate_tutoring(
+        self,
+        rewritten_question: str,
+        retrieved_docs: List[Dict[str, str]],
+        selected_nodes: List[Dict[str, Any]],
+        lab_artifacts: Optional[Dict[str, Any]],
+        highlights: List[Dict[str, Any]],
+        strict_mode: bool,
+        topic: str,
+    ) -> Dict[str, Any]:
+        docs_text = "\n".join([f"{d['id']}: {d.get('quote','')}" for d in retrieved_docs[:3]])
+
+        artifact_text = ""
+        if lab_artifacts and isinstance(lab_artifacts, dict):
+            arts = lab_artifacts.get("artifacts", []) or []
+            if arts:
+                a0 = arts[0]
+                aid = a0.get("artifact_id") or a0.get("id") or "artifact"
+                txt = (a0.get("text") or "")
+                artifact_text = f"{aid}: {txt}"
+
+        grounding_rule = (
+            "Strict mode: every sentence MUST include evidence ids in brackets like [kb_phish_001] or [email_1001]."
+            if strict_mode
+            else "Prefer course snippets and artifacts. If you add extra knowledge, label it as Extra context."
+        )
+
+        # A) FULL answer (no JSON) so it won’t get cut off by JSON constraints
+        prompt_answer = f"""{grounding_rule}
+
+Topic: {topic}
+Question: {rewritten_question}
+
+Course snippets:
+{docs_text}
+
+Artifact:
+{artifact_text}
+
+Write a clear helpful tutor answer (3-8 sentences). Do not truncate.
+"""
+        final_answer = self._call_model(prompt_answer, max_output_tokens=900).strip()
+        if not final_answer:
+            final_answer = "I don't have enough evidence to answer."
+
+        # B) Small JSON for steps + practice (UI structure)
+        prompt_struct = f"""Return ONLY valid JSON on ONE LINE. No markdown. No extra text.
+
+{grounding_rule}
+
+Topic: {topic}
+Question: {rewritten_question}
+
+Course snippets:
+{docs_text}
+
+Artifact:
+{artifact_text}
+
+Schema:
+{{"steps":[{{"step":"string","evidence":["id"]}},{{"step":"string","evidence":["id"]}}],
+"practice":{{"question":"string","choices":["A","B","C","D"],"correct_index":0,"evidence_ids":["id"],"explanation":"string"}}}}
+"""
+        raw = self._call_model(prompt_struct, max_output_tokens=450).strip()
+        parsed = self._extract_json_obj(raw) or {}
+
+        steps = parsed.get("steps") if isinstance(parsed.get("steps"), list) else []
+        practice = parsed.get("practice") if isinstance(parsed.get("practice"), dict) else {}
+
+        # Deterministic fallback so UI never blanks
+        if not steps:
+            kb_id = retrieved_docs[0]["id"] if retrieved_docs else "kb_unknown"
+            ev = [kb_id]
+            if lab_artifacts and isinstance(lab_artifacts, dict):
+                arts = lab_artifacts.get("artifacts", []) or []
+                if arts:
+                    ev.append(arts[0].get("artifact_id") or arts[0].get("id") or "artifact")
+            steps = [
+                {"step": "Identify the key indicator(s) in the artifact that match the concept diagram.", "evidence": ev},
+                {"step": "Take the safest next action recommended by the course snippet evidence.", "evidence": ev},
+            ]
+
+        if not practice or not practice.get("question"):
+            kb_id = retrieved_docs[0]["id"] if retrieved_docs else "kb_unknown"
+            practice = {
+                "question": "What is the safest first action when an email urges you to act via a link?",
+                "choices": ["Click immediately", "Reply asking for details", "Verify via official site or phone, do not click", "Forward to friends"],
+                "correct_index": 2,
+                "evidence_ids": [kb_id],
+                "explanation": "Best practice is to avoid clicking suspicious links and verify via a trusted channel.",
+            }
+
+        return {
+          "final_answer_text": final_answer,
+          "steps": steps,
+          "practice": practice,
+        }
+
+    def last_token_info(self) -> Dict[str, Any]:
+        return {"usageMetadata": self._last_usage, "model_used": self._last_model_used}
+
+    def last_raw(self) -> Dict[str, Any]:
+        return self._last_raw

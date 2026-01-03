@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 
@@ -13,17 +13,40 @@ const PRACTICE_QUESTION = {
   evidence: ["email_headers.txt: Line 4", "MITRE ATT&CK T1566.002"],
 }
 
-export function PracticePanel() {
+type PracticeProp =
+  | {
+      question: string
+      choices: string[]
+      correct_index: number
+      evidence_ids: string[]
+      explanation: string
+    }
+  | undefined
+
+export function PracticePanel({ practice }: { practice?: PracticeProp }) {
+  const effective = useMemo(() => {
+    if (practice?.question && practice?.choices?.length) {
+      return {
+        question: practice.question,
+        options: practice.choices,
+        correctAnswer: practice.correct_index ?? 0,
+        explanation: practice.explanation || "",
+        evidence: practice.evidence_ids || [],
+      }
+    }
+    return PRACTICE_QUESTION
+  }, [practice])
+
   const [selectedOption, setSelectedOption] = useState<number | null>(null)
   const [showAnswer, setShowAnswer] = useState(false)
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
       <div>
-        <h3 className="font-semibold text-lg mb-4">{PRACTICE_QUESTION.question}</h3>
+        <h3 className="font-semibold text-lg mb-4">{effective.question}</h3>
 
         <div className="space-y-2">
-          {PRACTICE_QUESTION.options.map((option, idx) => (
+          {effective.options.map((option, idx) => (
             <button
               key={idx}
               onClick={() => setSelectedOption(idx)}
@@ -45,22 +68,22 @@ export function PracticePanel() {
         <Card className="p-4 space-y-3 bg-muted/30">
           <div>
             <p className="text-sm font-medium mb-1">
-              {selectedOption === PRACTICE_QUESTION.correctAnswer ? "✓ Correct!" : "✗ Incorrect"}
+              {selectedOption === effective.correctAnswer ? "✓ Correct!" : "✗ Incorrect"}
             </p>
             <p className="text-sm text-muted-foreground">
-              The correct answer is <strong>{PRACTICE_QUESTION.options[PRACTICE_QUESTION.correctAnswer]}</strong>
+              The correct answer is <strong>{effective.options[effective.correctAnswer]}</strong>
             </p>
           </div>
 
           <div>
             <p className="text-sm font-medium mb-1">Explanation</p>
-            <p className="text-sm text-muted-foreground leading-relaxed">{PRACTICE_QUESTION.explanation}</p>
+            <p className="text-sm text-muted-foreground leading-relaxed">{effective.explanation}</p>
           </div>
 
           <div>
             <p className="text-sm font-medium mb-2">Evidence Links</p>
             <div className="space-y-1">
-              {PRACTICE_QUESTION.evidence.map((link, idx) => (
+              {effective.evidence.map((link: string, idx: number) => (
                 <div key={idx} className="text-xs text-muted-foreground font-mono bg-muted/50 px-2 py-1 rounded">
                   {link}
                 </div>

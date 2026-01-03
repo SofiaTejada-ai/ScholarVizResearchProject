@@ -11,9 +11,36 @@ import { ChatPanel } from "@/components/chat-panel"
 import { LabArtifactsPanel } from "@/components/lab-artifacts-panel"
 import { PracticePanel } from "@/components/practice-panel"
 
+type ChatTurn = { role: "user" | "assistant"; content: string }
+
+type ScholarVizResponse = {
+  rewritten_question?: string
+  topic_detected?: string
+  retrieved_docs?: Array<{ id: string; title: string; quote: string }>
+  selected_concepts?: string[]
+  diagram?: { nodes: any[]; edges: any[] }
+  lab?: { case_id: string; artifacts: any[]; highlights: any[] }
+  tutor?: { final_answer_text: string; steps: Array<{ step: string; evidence: string[] }> }
+  practice?: {
+    question: string
+    choices: string[]
+    correct_index: number
+    evidence_ids: string[]
+    explanation: string
+  }
+  telemetry?: any
+}
+
 export default function ScholarVizPage() {
   const [strictEvidence, setStrictEvidence] = useState(false)
   const [activeTab, setActiveTab] = useState<"lab" | "practice">("lab")
+
+  // Topic dropdown is UI-side. Backend still detects topic too.
+  const [topic, setTopic] = useState("phishing")
+
+  // Shared state that connects Chat -> Diagram/Lab/Practice
+  const [chatHistory, setChatHistory] = useState<ChatTurn[]>([])
+  const [lastResponse, setLastResponse] = useState<ScholarVizResponse | null>(null)
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
@@ -25,15 +52,15 @@ export default function ScholarVizPage() {
         </div>
 
         <div className="flex items-center gap-4">
-          <Select defaultValue="phishing">
+          <Select value={topic} onValueChange={setTopic}>
             <SelectTrigger className="w-[200px]">
               <SelectValue placeholder="Select topic" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="phishing">Phishing</SelectItem>
-              <SelectItem value="lateral-movement">Lateral Movement</SelectItem>
-              <SelectItem value="privilege-escalation">Privilege Escalation</SelectItem>
-              <SelectItem value="data-exfiltration">Data Exfiltration</SelectItem>
+              <SelectItem value="lateral_movement">Lateral Movement</SelectItem>
+              <SelectItem value="privilege_escalation">Privilege Escalation</SelectItem>
+              <SelectItem value="data_exfiltration">Data Exfiltration</SelectItem>
             </SelectContent>
           </Select>
 
@@ -54,10 +81,16 @@ export default function ScholarVizPage() {
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left: Chat Panel */}
-        <ChatPanel />
+        <ChatPanel
+          strictEvidence={strictEvidence}
+          topic={topic}
+          chatHistory={chatHistory}
+          setChatHistory={setChatHistory}
+          setLastResponse={setLastResponse}
+        />
 
         {/* Right: Diagram Panel */}
-        <DiagramCanvas />
+        <DiagramCanvas diagram={lastResponse?.diagram} />
       </div>
 
       {/* Bottom: Lab + Practice Panel */}
@@ -85,7 +118,13 @@ export default function ScholarVizPage() {
           </button>
         </div>
 
-        <div className="flex-1 overflow-auto">{activeTab === "lab" ? <LabArtifactsPanel /> : <PracticePanel />}</div>
+        <div className="flex-1 overflow-auto">
+          {activeTab === "lab" ? (
+            <LabArtifactsPanel lab={lastResponse?.lab} tutor={lastResponse?.tutor} />
+          ) : (
+            <PracticePanel practice={lastResponse?.practice} />
+          )}
+        </div>
       </div>
     </div>
   )

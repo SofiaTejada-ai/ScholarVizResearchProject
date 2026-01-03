@@ -3,23 +3,53 @@
     {
       "id": "concept_phish_indicator",
       "label": "Phishing Indicator",
-      "description": "Signs that an email is phishing",
+      "description": "Signs that an email is phishing, such as urgency, suspicious links, and mismatched sender details.",
       "topic": "phishing",
-      "tags": ["phishing", "email", "link", "attachment"]
+      "tags": [
+        "phishing",
+        "email",
+        "link",
+        "attachment",
+        "urgent",
+        "verify",
+        "account",
+        "http",
+        "bank",
+        "support"
+      ]
     },
     {
       "id": "concept_credentials_exfil",
       "label": "Credential Theft",
-      "description": "Attempts to capture or misuse credentials",
+      "description": "Attempts to capture, steal, or misuse credentials that enable unauthorized access.",
       "topic": "lateral_movement",
-      "tags": ["credentials", "exfiltration"]
+      "tags": [
+        "credentials",
+        "credential",
+        "password",
+        "login",
+        "username",
+        "svc-admin",
+        "admin",
+        "privileged",
+        "account"
+      ]
     },
     {
       "id": "concept_smb_activity",
       "label": "Unusual SMB Activity",
-      "description": "Network file-sharing usage patterns that are anomalous",
+      "description": "Network file-sharing usage patterns that are anomalous or indicate lateral movement.",
       "topic": "lateral_movement",
-      "tags": ["SMB", "network", "anomaly"]
+      "tags": [
+        "SMB",
+        "smb",
+        "network",
+        "anomaly",
+        "connection",
+        "host",
+        "svc-admin",
+        "03:12AM"
+      ]
     }
   ],
   "edges": [
@@ -27,15 +57,20 @@
       "source": "concept_phish_indicator",
       "target": "concept_credentials_exfil",
       "relation": "can lead to",
-      "description": "Phishing can obtain credentials that enable lateral movement",
-      "evidence_doc_ids": ["kb_phish_001", "kb_lateral_001"]
+      "description": "Phishing can obtain credentials that enable lateral movement.",
+      "evidence_doc_ids": [
+        "kb_phish_001",
+        "kb_lateral_001"
+      ]
     },
     {
       "source": "concept_credentials_exfil",
       "target": "concept_smb_activity",
       "relation": "enables",
-      "description": "Stolen credentials used to access SMB may create unusual activity",
-      "evidence_doc_ids": ["kb_lateral_001"]
+      "description": "Stolen credentials used to access SMB may create unusual activity.",
+      "evidence_doc_ids": [
+        "kb_lateral_001"
+      ]
     }
   ]
 }

@@ -1,86 +1,57 @@
+// scholar-viz-ui-design/app/page.tsx
 "use client"
 
 import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
-import { Label } from "@/components/ui/label"
-import { Upload, Shield } from "lucide-react"
+import { ChatPanel, type ScholarVizResponse } from "@/components/chat-panel"
 import { DiagramCanvas } from "@/components/diagram-canvas"
-import { ChatPanel } from "@/components/chat-panel"
 import { LabArtifactsPanel } from "@/components/lab-artifacts-panel"
 import { PracticePanel } from "@/components/practice-panel"
 
 type ChatTurn = { role: "user" | "assistant"; content: string }
 
-type ScholarVizResponse = {
-  rewritten_question?: string
-  topic_detected?: string
-  retrieved_docs?: Array<{ id: string; title: string; quote: string }>
-  selected_concepts?: string[]
-  diagram?: { nodes: any[]; edges: any[] }
-  lab?: { case_id: string; artifacts: any[]; highlights: any[] }
-  tutor?: { final_answer_text: string; steps: Array<{ step: string; evidence: string[] }> }
-  practice?: {
-    question: string
-    choices: string[]
-    correct_index: number
-    evidence_ids: string[]
-    explanation: string
-  }
-  telemetry?: any
-}
-
-export default function ScholarVizPage() {
+export default function Page() {
   const [strictEvidence, setStrictEvidence] = useState(false)
-  const [activeTab, setActiveTab] = useState<"lab" | "practice">("lab")
-
-  // Topic dropdown is UI-side. Backend still detects topic too.
   const [topic, setTopic] = useState("phishing")
-
-  // Shared state that connects Chat -> Diagram/Lab/Practice
   const [chatHistory, setChatHistory] = useState<ChatTurn[]>([])
   const [lastResponse, setLastResponse] = useState<ScholarVizResponse | null>(null)
 
+  const [activeTab, setActiveTab] = useState<"lab" | "practice">("lab")
+
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
-      {/* Top Bar */}
+      {/* Top bar */}
       <header className="border-b border-border px-4 py-3 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <Shield className="w-6 h-6 text-primary" />
-          <span className="text-lg font-semibold">ScholarViz</span>
+        <div className="flex items-center gap-3">
+          <div className="font-semibold">ScholarViz</div>
+          <div className="text-xs text-muted-foreground">Cybersecurity Tutor</div>
         </div>
 
         <div className="flex items-center gap-4">
-          <Select value={topic} onValueChange={setTopic}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Select topic" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="phishing">Phishing</SelectItem>
-              <SelectItem value="lateral_movement">Lateral Movement</SelectItem>
-              <SelectItem value="privilege_escalation">Privilege Escalation</SelectItem>
-              <SelectItem value="data_exfiltration">Data Exfiltration</SelectItem>
-            </SelectContent>
-          </Select>
+          <label className="text-sm text-muted-foreground">Topic</label>
+          <select
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            className="border border-border rounded px-2 py-1 bg-background text-foreground text-sm"
+          >
+            <option value="phishing">Phishing</option>
+            <option value="lateral-movement">Lateral Movement</option>
+            <option value="privilege-escalation">Privilege Escalation</option>
+            <option value="data-exfiltration">Data Exfiltration</option>
+          </select>
 
-          <div className="flex items-center gap-2">
-            <Switch id="strict-evidence" checked={strictEvidence} onCheckedChange={setStrictEvidence} />
-            <Label htmlFor="strict-evidence" className="text-sm cursor-pointer">
-              Strict Evidence
-            </Label>
-          </div>
-
-          <Button variant="outline" size="sm">
-            <Upload className="w-4 h-4 mr-2" />
-            Upload artifacts
-          </Button>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={strictEvidence}
+              onChange={(e) => setStrictEvidence(e.target.checked)}
+            />
+            Strict Evidence
+          </label>
         </div>
       </header>
 
-      {/* Main Content Area */}
+      {/* Main */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left: Chat Panel */}
         <ChatPanel
           strictEvidence={strictEvidence}
           topic={topic}
@@ -89,11 +60,20 @@ export default function ScholarVizPage() {
           setLastResponse={setLastResponse}
         />
 
-        {/* Right: Diagram Panel */}
-        <DiagramCanvas diagram={lastResponse?.diagram} />
+        <div className="flex-1 relative overflow-hidden">
+          <DiagramCanvas />
+
+          {/* lightweight debug panel (optional but super useful while wiring) */}
+          {lastResponse?.tutor?.final_answer_text && (
+            <div className="absolute right-4 bottom-4 w-[420px] max-h-[240px] overflow-auto border border-border rounded-lg bg-background/90 p-3 text-xs">
+              <div className="font-semibold mb-1">Latest tutor answer (debug)</div>
+              <div className="whitespace-pre-wrap">{lastResponse.tutor.final_answer_text}</div>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Bottom: Lab + Practice Panel */}
+      {/* Bottom tabs */}
       <div className="border-t border-border h-[300px] flex flex-col">
         <div className="flex border-b border-border">
           <button
@@ -119,11 +99,7 @@ export default function ScholarVizPage() {
         </div>
 
         <div className="flex-1 overflow-auto">
-          {activeTab === "lab" ? (
-            <LabArtifactsPanel lab={lastResponse?.lab} tutor={lastResponse?.tutor} />
-          ) : (
-            <PracticePanel practice={lastResponse?.practice} />
-          )}
+          {activeTab === "lab" ? <LabArtifactsPanel /> : <PracticePanel />}
         </div>
       </div>
     </div>

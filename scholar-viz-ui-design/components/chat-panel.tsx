@@ -1,230 +1,285 @@
-import React, { useRef, useState, useEffect, Dispatch, SetStateAction } from "react";
+// scholar-viz-ui-design/components/chat-panel.tsx
+"use client"
 
-/**
- * ChatPanel
- *
- * Props:
- *  - chatHistory: ChatTurn[]
- *  - setChatHistory: Dispatch<SetStateAction<ChatTurn[]>>
- *  - setLastResponse: Dispatch<SetStateAction<ScholarVizResponse | null>>
- *
- * Behavior:
- *  - Append user turn immediately.
- *  - Create assistant bubble BEFORE starting fetch.
- *  - Update that exact assistant bubble on chunk events.
- *  - On done: finalize assistant bubble and set lastResponse.
- */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Send } from "lucide-react"
 
-export type Role = "user" | "assistant" | "system";
+type ChatTurn = { role: "user" | "assistant"; content: string }
 
-export type ChatTurn = {
-  role: Role;
-  content: string;
-  id: string;
-};
+type TutorStep = { step: string; evidence: string[] }
+type Tutor = { final_answer_text: string; steps: TutorStep[] }
 
 export type ScholarVizResponse = {
-  // keep flexible; can be refined to the exact shape later
-  rewritten_question?: string;
-  topic_detected?: string;
-  retrieved_docs?: any[];
-  selected_concepts?: string[];
-  diagram?: any;
-  lab?: any;
-  tutor?: any;
-  practice?: any;
-  telemetry?: any;
-  [k: string]: any;
-};
-
-type Props = {
-  chatHistory: ChatTurn[];
-  setChatHistory: Dispatch<SetStateAction<ChatTurn[]>>;
-  setLastResponse: Dispatch<SetStateAction<ScholarVizResponse | null>>;
-  // optional: initial user id / settings
-  userId?: string;
-};
-
-function mergeObjectsReplaceArrays(target: any, source: any): any {
-  if (Array.isArray(source)) {
-    return source.slice();
+  rewritten_question?: string
+  topic_detected?: string
+  retrieved_docs?: Array<{ id: string; title: string; quote: string }>
+  selected_concepts?: string[]
+  diagram?: { nodes: unknown[]; edges: unknown[] }
+  lab?: { case_id: string; artifacts: unknown[]; highlights: unknown[] }
+  tutor?: Tutor
+  practice?: {
+    question: string
+    choices: string[]
+    correct_index: number
+    evidence_ids: string[]
+    explanation: string
   }
-  if (source !== null && typeof source === "object") {
-    const out: any = { ...(target || {}) };
-    for (const k of Object.keys(source)) {
-      out[k] = mergeObjectsReplaceArrays(target?.[k], source[k]);
-    }
-    return out;
-  }
-  return source;
+  telemetry?: unknown
 }
 
-export default function ChatPanel({ chatHistory, setChatHistory, setLastResponse, userId = "local_ui_user" }: Props) {
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
+type Props = {
+  strictEvidence: boolean
+  topic: string
+  chatHistory: ChatTurn[]
+  setChatHistory: React.Dispatch<React.SetStateAction<ChatTurn[]>>
+  setLastResponse: React.Dispatch<React.SetStateAction<ScholarVizResponse | null>>
+}
 
-  useEffect(() => {
-    return () => {
-      if (abortRef.current) {
-        abortRef.current.abort();
-      }
-    };
-  }, []);
+const SUGGESTED_QUESTIONS = [
+  "What is spear phishing?",
+  "How do attackers move laterally?",
+  "Explain pass-the-hash attacks",
+  "What are common email indicators?",
+] as const
 
-  async function handleSend() {
-    const text = input.trim();
-    if (!text) return;
+const EMPTY_GREETING: ChatTurn = {
+  role: "assistant",
+  content: "Hello! I’m your cybersecurity tutor. Ask me anything, and I’ll ground answers in the lab + course snippets.",
+}
 
-    // 1) Append user turn
-    const userTurn: ChatTurn = { role: "user", content: text, id: `u-${Date.now()}` };
-    setChatHistory((prev) => [...prev, userTurn]);
-    setInput("");
+function parseSSEFrame(frame: string): { event: string | null; data: string } {
+  let event: string | null = null
+  const dataLines: string[] = []
+  for (const line of frame.split("\n")) {
+    if (line.startsWith("event:")) event = line.slice(6).trim()
+    if (line.startsWith("data:")) dataLines.push(line.slice(5).trim())
+  }
+  return { event, data: dataLines.join("\n") }
+}
 
-    // 2) Create assistant slot BEFORE streaming (so the UI always has a bubble to update)
-    const assistantId = `a-${Date.now()}`;
-    const assistantTurn: ChatTurn = { role: "assistant", content: "", id: assistantId };
-    setChatHistory((prev) => [...prev, assistantTurn]);
+export function ChatPanel({ strictEvidence, topic, chatHistory, setChatHistory, setLastResponse }: Props) {
+  const [input, setInput] = useState("")
+  const [loading, setLoading] = useState(false)
 
-    setLoading(true);
-    setLastResponse(null);
+  const abortRef = useRef<AbortController | null>(null)
+  const assistantIndexRef = useRef<number | null>(null)
+
+  const bottomRef = useRef<HTMLDivElement>(null)
+  useEffect(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), [chatHistory, loading])
+
+  const messages = useMemo(() => (chatHistory.length ? chatHistory : [EMPTY_GREETING]), [chatHistory])
+
+  const ensureAssistantSlot = useCallback(() => {
+    if (assistantIndexRef.current != null) return
+    setChatHistory((prev) => {
+      assistantIndexRef.current = prev.length
+      return [...prev, { role: "assistant", content: "" }]
+    })
+  }, [setChatHistory])
+
+  const writeAssistant = useCallback(
+    (text: string) => {
+      const idx = assistantIndexRef.current
+      if (idx == null) return
+      setChatHistory((prev) => {
+        if (idx >= prev.length) return prev
+        const next = prev.slice()
+        next[idx] = { role: "assistant", content: text || " " }
+        return next
+      })
+    },
+    [setChatHistory],
+  )
+
+  const handleSend = useCallback(async () => {
+    const userText = input.trim()
+    if (!userText || loading) return
+
+    // optimistic UI
+    const userMsg: ChatTurn = { role: "user", content: userText }
+    setChatHistory((prev) => [...prev, userMsg])
+    setInput("")
+    setLoading(true)
+    setLastResponse(null)
+
+    // reset streaming refs
+    assistantIndexRef.current = null
+    abortRef.current?.abort()
+    abortRef.current = new AbortController()
+
+    // We send the history as it exists "now" + this user message.
+    // (Using current chatHistory here is fine; even if state updates async,
+    // backend doesn’t require perfect parity for UI.)
+    const historyToSend = [...chatHistory, userMsg]
 
     try {
-      abortRef.current = new AbortController();
-      const resp = await fetch("/api/ask", {
+      ensureAssistantSlot()
+      writeAssistant("") // clear any old text
+
+      const res = await fetch("/api/ask", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
         body: JSON.stringify({
-          message: text,
-          chat_history: chatHistory.map((m) => ({ role: m.role, content: m.content })),
-          strict_mode: true,
-          user_id: userId,
+          message: userText,
+          chat_history: historyToSend,
+          strict_mode: strictEvidence,
+          user_id: "u1",
+          optional_artifacts: null,
+          ui_topic: topic,
         }),
         signal: abortRef.current.signal,
-      });
+      })
 
-      if (!resp.ok) {
-        const errText = await resp.text();
-        setChatHistory((prev) =>
-          prev.map((m) => (m.id === assistantId ? { ...m, content: `Error: ${resp.status} ${resp.statusText}: ${errText}` } : m))
-        );
-        setLoading(false);
-        return;
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "")
+        writeAssistant(`Error: ${res.status} ${txt.slice(0, 300)}`)
+        return
       }
 
-      // Expect SSE stream (ready + chunk + done), but backend sends one chunk with entire JSON
-      const reader = resp.body?.getReader();
-      if (!reader) {
-        setChatHistory((prev) =>
-          prev.map((m) => (m.id === assistantId ? { ...m, content: "No response body." } : m))
-        );
-        setLoading(false);
-        return;
+      if (!res.body) {
+        writeAssistant("Error: empty response body")
+        return
       }
 
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let finalParsed: ScholarVizResponse | null = null;
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buf = ""
 
       while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
 
-        // process complete SSE event blocks
-        let idx: number;
-        while ((idx = buffer.indexOf("\n\n")) !== -1) {
-          const raw = buffer.slice(0, idx).trim();
-          buffer = buffer.slice(idx + 2);
-          if (!raw) continue;
+        let sep: number
+        while ((sep = buf.indexOf("\n\n")) !== -1) {
+          const frame = buf.slice(0, sep)
+          buf = buf.slice(sep + 2)
 
-          // parse SSE-like lines
-          const lines = raw.split("\n");
-          let event = "message";
-          const dataLines: string[] = [];
-          for (const line of lines) {
-            const c = line.indexOf(":");
-            if (c === -1) continue;
-            const field = line.slice(0, c).trim();
-            const val = line.slice(c + 1).trim();
-            if (field === "event") event = val;
-            else if (field === "data") dataLines.push(val);
-          }
-          const data = dataLines.join("\n");
+          const { event, data } = parseSSEFrame(frame)
+          if (!event) continue
+
           if (event === "chunk") {
-            // chunk expected to be a JSON payload
+            let payload: ScholarVizResponse | null = null
             try {
-              const parsed = JSON.parse(data) as ScholarVizResponse;
-              finalParsed = parsed;
-              // update assistant bubble with final_answer if present, else use any tutor.final_answer or serialize
-              const chunkText = parsed?.tutor?.final_answer ?? parsed?.final_answer ?? JSON.stringify(parsed);
-              setChatHistory((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: chunkText } : m)));
-              // set shared lastResponse so other panels can consume it
-              setLastResponse(parsed);
-            } catch (e) {
-              // non-JSON chunk: append raw text
-              setChatHistory((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + data } : m)));
+              payload = JSON.parse(data) as ScholarVizResponse
+            } catch {
+              payload = null
             }
-          } else if (event === "error") {
-            setChatHistory((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: `Error: ${data}` } : m)));
-            setLastResponse(null);
-          } else if (event === "done") {
-            // finalize and exit
-            setLoading(false);
-          } else if (event === "ready") {
-            // no-op: server indicates it will send data
-          } else {
-            // generic data
-            setChatHistory((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + data } : m)));
+            if (!payload) continue
+
+            setLastResponse(payload)
+
+            const tutorText = payload.tutor?.final_answer_text?.trim() || ""
+            const steps = payload.tutor?.steps || []
+
+            // Build a nice final chat message
+            const lines: string[] = []
+            if (tutorText) lines.push(tutorText)
+
+            if (steps.length) {
+              lines.push("")
+              steps.forEach((s, i) => lines.push(`${i + 1}. ${s.step}`))
+            }
+
+            // (Optional) show practice question preview
+            if (payload.practice?.question) {
+              lines.push("")
+              lines.push(`Practice: ${payload.practice.question}`)
+            }
+
+            writeAssistant(lines.join("\n"))
+          }
+
+          if (event === "error") {
+            writeAssistant(`Error: ${data}`)
+          }
+
+          if (event === "done") {
+            // nothing else needed; chunk already wrote final message
           }
         }
       }
-      // stream ended: ensure loading cleared
-      setLoading(false);
-      if (finalParsed) {
-        setLastResponse(finalParsed);
-      }
     } catch (err: any) {
-      if (err?.name === "AbortError") {
-        setChatHistory((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: "Request aborted." } : m)));
-      } else {
-        setChatHistory((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: `Error: ${err?.message ?? "unknown"}` } : m)));
-      }
-      setLoading(false);
+      writeAssistant(`Error: ${err?.message || String(err)}`)
     } finally {
-      if (abortRef.current) {
-        abortRef.current = null;
-      }
+      setLoading(false)
     }
-  }
+  }, [
+    input,
+    loading,
+    chatHistory,
+    setChatHistory,
+    setLastResponse,
+    strictEvidence,
+    topic,
+    ensureAssistantSlot,
+    writeAssistant,
+  ])
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort()
+      abortRef.current = null
+    }
+  }, [])
 
   return (
-    <div className="chat-panel">
-      <div className="messages" style={{ maxHeight: 400, overflow: "auto" }}>
-        {chatHistory.map((m) => (
-          <div key={m.id} className={`message ${m.role}`} style={{ marginBottom: 8 }}>
-            <div style={{ fontWeight: "600", fontSize: 12 }}>{m.role}</div>
-            <div style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>
-          </div>
-        ))}
+    <div className="w-[350px] border-r border-border flex flex-col">
+      <div className="p-4 border-b border-border">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Chat</h2>
       </div>
 
-      <div className="composer" style={{ marginTop: 12 }}>
-        <textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask a question..." style={{ width: "100%", minHeight: 80 }} />
-        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-          <button onClick={handleSend} disabled={loading}>
-            {loading ? "Thinking..." : "Send"}
-          </button>
-          <button
-            onClick={() => {
-              if (abortRef.current) abortRef.current.abort();
-            }}
-            disabled={!loading}
-          >
-            Abort
-          </button>
+      <ScrollArea className="flex-1 p-4">
+        <div className="space-y-4">
+          {messages.map((m, i) => (
+            <div
+              key={i}
+              className={`text-sm ${
+                m.role === "user" ? "ml-8 bg-primary/10" : "mr-8 bg-muted/50"
+              } p-3 rounded-lg whitespace-pre-wrap`}
+            >
+              {m.content}
+            </div>
+          ))}
+
+          {loading && <div className="mr-8 bg-muted/50 p-3 rounded-lg text-sm text-muted-foreground">Thinking…</div>}
+          <div ref={bottomRef} />
+        </div>
+      </ScrollArea>
+
+      <div className="p-4 border-t border-border space-y-3">
+        <div className="flex gap-2 flex-wrap">
+          {SUGGESTED_QUESTIONS.map((q) => (
+            <button
+              key={q}
+              type="button"
+              onClick={() => setInput(q)}
+              className="text-xs px-2 py-1 rounded-full bg-muted hover:bg-muted/70 transition-colors"
+            >
+              {q}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex gap-2">
+          <Input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSend()}
+            placeholder="Ask a question…"
+            className="flex-1"
+          />
+          <Button size="icon" disabled={loading} onClick={handleSend}>
+            <Send className="w-4 h-4" />
+          </Button>
         </div>
       </div>
     </div>
-  );
+  )
 }

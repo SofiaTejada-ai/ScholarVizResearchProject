@@ -3,82 +3,92 @@ import { NextRequest } from "next/server"
 
 type ChatTurn = { role: "user" | "assistant"; content: string }
 
-function sseEncode(event: string, data: unknown): string {
+type TutorStep = { step: string; evidence: string[] }
+type Tutor = { final_answer_text: string; steps: TutorStep[] }
+
+type ScholarVizResponse = {
+  rewritten_question?: string
+  topic_detected?: string
+  retrieved_docs?: Array<{ id: string; title: string; quote: string }>
+  selected_concepts?: string[]
+  diagram?: { nodes: unknown[]; edges: unknown[] }
+  lab?: { case_id: string; artifacts: unknown[]; highlights: unknown[] }
+  tutor?: Tutor
+  practice?: {
+    question: string
+    choices: string[]
+    correct_index: number
+    evidence_ids: string[]
+    explanation: string
+  }
+  telemetry?: unknown
+}
+
+function sseEncode(event: string, data: unknown) {
   const payload = typeof data === "string" ? data : JSON.stringify(data)
-  // IMPORTANT: \n\n frame separator
   return `event: ${event}\ndata: ${payload}\n\n`
 }
 
-function chunkText(s: string, size = 140): string[] {
-  if (!s) return [""]
-  const out: string[] = []
-  for (let i = 0; i < s.length; i += size) out.push(s.slice(i, i + size))
-  return out
+function jsonSafe(v: unknown): Record<string, unknown> {
+  return typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {}
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => ({}))
-  const { message, chat_history, strict_mode, user_id, optional_artifacts, ui_topic } = body || {}
+  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>
 
-  const BACKEND_URL = process.env.SCHOLARVIZ_BACKEND_URL || "http://localhost:8000/api/ask"
+  const backendBase = (process.env.BACKEND_URL || "http://localhost:8000").replace(/\/$/, "")
+  const backendUrl = `${backendBase}/api/ask`
+
+  const payload = {
+    message: String(body.message ?? ""),
+    chat_history: (body.chat_history as ChatTurn[]) ?? [],
+    strict_mode: Boolean(body.strict_mode ?? false),
+    user_id: String(body.user_id ?? "u1"),
+    optional_artifacts: body.optional_artifacts ?? null,
+    ui_topic: String(body.ui_topic ?? "phishing"),
+  }
 
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder()
-      const send = (event: string, payload: unknown) => {
-        controller.enqueue(encoder.encode(sseEncode(event, payload)))
-      }
+      const send = (event: string, data: unknown) =>
+        controller.enqueue(encoder.encode(sseEncode(event, data)))
+
+      // Abort handling
+      const ac = new AbortController()
+      const abort = () => ac.abort()
+      req.signal.addEventListener("abort", abort)
 
       try {
-        send("ready", { ok: true, backend: BACKEND_URL })
+        send("ready", { ok: true, backend: backendUrl })
 
-        // Call your FastAPI backend (non-streaming JSON)
-        const resp = await fetch(BACKEND_URL, {
+        const res = await fetch(backendUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message,
-            chat_history: (chat_history ?? []) as ChatTurn[],
-            strict_mode: !!strict_mode,
-            user_id: user_id ?? "u1",
-            optional_artifacts: optional_artifacts ?? null,
-            ui_topic: ui_topic ?? "phishing",
-          }),
+          body: JSON.stringify(payload),
+          signal: ac.signal,
         })
 
-        if (!resp.ok) {
-          const txt = await resp.text().catch(() => "")
-          throw new Error(`Backend error ${resp.status}: ${txt}`)
+        if (!res.ok) {
+          const text = await res.text().catch(() => "")
+          send("error", { error: `Backend ${res.status}: ${text || res.statusText}` })
+          send("done", { done: true })
+          controller.close()
+          return
         }
 
-        const data = await resp.json()
-
-        // Send most of the payload first (diagram/lab/practice/etc)
-        // then stream tutor.final_answer_text in chunks so UI definitely updates.
-        const tutor = data?.tutor
-        const tutorText: string = typeof tutor?.final_answer_text === "string" ? tutor.final_answer_text : ""
-
-        // 1) chunk without tutor text (keeps UI panels updating quickly)
-        const initial = { ...data }
-        if (initial?.tutor?.final_answer_text) initial.tutor = { ...initial.tutor, final_answer_text: "" }
-        send("chunk", initial)
-
-        // 2) stream tutor text in pieces
-        const pieces = chunkText(tutorText, 160)
-        for (const p of pieces) {
-          send("chunk", { tutor: { final_answer_text: p } })
-        }
-
-        // 3) finally send the full tutor object once (so steps are guaranteed present)
-        if (tutor) {
-          send("chunk", { tutor })
-        }
-
+        // Backend returns full JSON (non-stream). Emit ONE chunk (simple + robust).
+        const data = (await res.json().catch(() => ({}))) as ScholarVizResponse
+        send("chunk", jsonSafe(data))
         send("done", { done: true })
         controller.close()
-      } catch (err: any) {
-        send("error", { error: err?.message || "stream failed" })
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        send("error", { error: msg })
+        send("done", { done: true })
         controller.close()
+      } finally {
+        req.signal.removeEventListener("abort", abort)
       }
     },
   })
